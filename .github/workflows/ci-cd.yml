@@ -1,0 +1,60 @@
+name: Infrastructure CI/CD
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+    
+    - name: Validate Kubernetes manifests
+      run: |
+        cd deployment/kubernetes
+        kubectl kustomize overlays/dev/ > /dev/null
+        kubectl kustomize overlays/prod/ > /dev/null
+        echo "Kubernetes manifests are valid"
+    
+    - name: Check Makefile syntax
+      run: make -n deploy-dev deploy-down
+
+  deploy-dev:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/dev' && github.event_name == 'push'
+    needs: validate
+    environment: development
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Configure kubectl
+      run: |
+        echo "${{ secrets.KUBE_CONFIG_DEV }}" | base64 -d > $HOME/.kube/config
+        chmod 600 $HOME/.kube/config
+    
+    - name: Deploy to development
+      run: make deploy-dev
+
+  deploy-prod:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: validate
+    environment: production
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Configure kubectl
+      run: |
+        echo "${{ secrets.KUBE_CONFIG_PROD }}" | base64 -d > $HOME/.kube/config
+        chmod 600 $HOME/.kube/config
+    
+    - name: Deploy to production
+      run: make deploy-prod
