@@ -6,24 +6,30 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: ghcr.io/colabdevelopers/dev-autocare360-backend
+  FRONTEND_IMAGE: ghcr.io/colabdevelopers/dev-autocare360-frontend
+  CHATBOT_IMAGE: ghcr.io/colabdevelopers/autocare360-chatbot
+
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up kubectl
       uses: azure/setup-kubectl@v3
       with:
         version: 'v1.28.0'
-    
+
     - name: Validate Kubernetes manifests
       run: |
         cd deployment/kubernetes
         kubectl kustomize overlays/dev/ > /dev/null
         kubectl kustomize overlays/prod/ > /dev/null
         echo "Kubernetes manifests are valid"
-    
+
     - name: Check Makefile syntax
       run: make -n deploy-dev deploy-down
 
@@ -31,15 +37,96 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/dev' && github.event_name == 'push'
     needs: validate
-    environment: development
     steps:
     - uses: actions/checkout@v4
-    
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata for backend
+      id: meta-backend
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.BACKEND_IMAGE }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Extract metadata for frontend
+      id: meta-frontend
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.FRONTEND_IMAGE }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Extract metadata for chatbot
+      id: meta-chatbot
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.CHATBOT_IMAGE }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push backend
+      uses: docker/build-push-action@v5
+      with:
+        context: ../dev-autocare360-backend
+        push: true
+        tags: ${{ steps.meta-backend.outputs.tags }}
+        labels: ${{ steps.meta-backend.outputs.labels }}
+
+    - name: Build and push frontend
+      uses: docker/build-push-action@v5
+      with:
+        context: ../dev-autocare360-frontend
+        push: true
+        tags: ${{ steps.meta-frontend.outputs.tags }}
+        labels: ${{ steps.meta-frontend.outputs.labels }}
+
+    - name: Build and push chatbot
+      uses: docker/build-push-action@v5
+      with:
+        context: ../autocare360-chatbot
+        push: true
+        tags: ${{ steps.meta-chatbot.outputs.tags }}
+        labels: ${{ steps.meta-chatbot.outputs.labels }}
+
     - name: Configure kubectl
       run: |
+        mkdir -p $HOME/.kube
         echo "${{ secrets.KUBE_CONFIG_DEV }}" | base64 -d > $HOME/.kube/config
         chmod 600 $HOME/.kube/config
-    
+
+    - name: Create secrets from GitHub secrets
+      run: |
+        # Create namespace if it doesn't exist
+        kubectl create namespace autocare360 --dry-run=client -o yaml | kubectl apply -f -
+
+        # Create application secrets
+        kubectl create secret generic autocare360-secrets \
+          --namespace autocare360 \
+          --from-literal=DB_URL="${{ secrets.DB_URL }}" \
+          --from-literal=JWT_SECRET="${{ secrets.JWT_SECRET }}" \
+          --from-literal=MYSQL_ROOT_PASSWORD="${{ secrets.MYSQL_ROOT_PASSWORD }}" \
+          --from-literal=MYSQL_DATABASE="${{ secrets.MYSQL_DATABASE }}" \
+          --from-literal=MYSQL_USER="${{ secrets.MYSQL_USER }}" \
+          --from-literal=MYSQL_PASSWORD="${{ secrets.MYSQL_PASSWORD }}" \
+          --from-literal=OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+          --dry-run=client -o yaml | kubectl apply -f -
+
     - name: Deploy to development
       run: make deploy-dev
 
@@ -47,14 +134,95 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: validate
-    environment: production
     steps:
     - uses: actions/checkout@v4
-    
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata for backend
+      id: meta-backend-prod
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.BACKEND_IMAGE }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Extract metadata for frontend
+      id: meta-frontend-prod
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.FRONTEND_IMAGE }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Extract metadata for chatbot
+      id: meta-chatbot-prod
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.CHATBOT_IMAGE }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push backend
+      uses: docker/build-push-action@v5
+      with:
+        context: ../dev-autocare360-backend
+        push: true
+        tags: ${{ steps.meta-backend-prod.outputs.tags }}
+        labels: ${{ steps.meta-backend-prod.outputs.labels }}
+
+    - name: Build and push frontend
+      uses: docker/build-push-action@v5
+      with:
+        context: ../dev-autocare360-frontend
+        push: true
+        tags: ${{ steps.meta-frontend-prod.outputs.tags }}
+        labels: ${{ steps.meta-frontend-prod.outputs.labels }}
+
+    - name: Build and push chatbot
+      uses: docker/build-push-action@v5
+      with:
+        context: ../autocare360-chatbot
+        push: true
+        tags: ${{ steps.meta-chatbot-prod.outputs.tags }}
+        labels: ${{ steps.meta-chatbot-prod.outputs.labels }}
+
     - name: Configure kubectl
       run: |
+        mkdir -p $HOME/.kube
         echo "${{ secrets.KUBE_CONFIG_PROD }}" | base64 -d > $HOME/.kube/config
         chmod 600 $HOME/.kube/config
-    
+
+    - name: Create secrets from GitHub secrets
+      run: |
+        # Create namespace if it doesn't exist
+        kubectl create namespace autocare360 --dry-run=client -o yaml | kubectl apply -f -
+
+        # Create application secrets
+        kubectl create secret generic autocare360-secrets \
+          --namespace autocare360 \
+          --from-literal=DB_URL="${{ secrets.DB_URL }}" \
+          --from-literal=JWT_SECRET="${{ secrets.JWT_SECRET }}" \
+          --from-literal=MYSQL_ROOT_PASSWORD="${{ secrets.MYSQL_ROOT_PASSWORD }}" \
+          --from-literal=MYSQL_DATABASE="${{ secrets.MYSQL_DATABASE }}" \
+          --from-literal=MYSQL_USER="${{ secrets.MYSQL_USER }}" \
+          --from-literal=MYSQL_PASSWORD="${{ secrets.MYSQL_PASSWORD }}" \
+          --from-literal=OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+          --dry-run=client -o yaml | kubectl apply -f -
+
     - name: Deploy to production
       run: make deploy-prod

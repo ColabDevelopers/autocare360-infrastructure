@@ -2,12 +2,20 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - namespace.yaml
+  - secrets.yaml
   - configmap.yaml
-  - app-deployment.yaml
-  - app-service.yaml
-  - db-deployment.yaml
-  - db-service.yaml
+  - backend-deployment.yaml
+  - backend-service.yaml
+  - frontend-deployment.yaml
+  - frontend-service.yaml
+  - chatbot-deployment.yaml
+  - chatbot-service.yaml
+  - db-redis-deployment.yaml
+  - db-redis-service.yaml
+  - db-mysql-deployment.yaml
+  - db-mysql-service.yaml
   - storage/mysql-pvc.yaml
+  - storage/redis-pvc.yaml
   - network/ingress.yaml
   - rbac/serviceaccount.yaml
   - rbac/role.yaml

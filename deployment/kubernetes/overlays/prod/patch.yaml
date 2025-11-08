@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autocare360-backend
+  namespace: autocare360
+spec:
+  replicas: 3
+  template:
+    spec:
+      containers:
+      - name: autocare360-backend
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autocare360-frontend
+  namespace: autocare360
+spec:
+  replicas: 2
+  template:
+    spec:
+      containers:
+      - name: autocare360-frontend
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autocare360-chatbot
+  namespace: autocare360
+spec:
+  replicas: 2
+  template:
+    spec:
+      containers:
+      - name: autocare360-chatbot
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: autocare360
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+      - name: redis
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  namespace: autocare360
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+      - name: mysql
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: autocare360-config
+  namespace: autocare360
+data:
+  SPRING_PROFILES_ACTIVE: "prod"

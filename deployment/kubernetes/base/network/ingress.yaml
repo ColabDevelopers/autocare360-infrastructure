@@ -12,6 +12,20 @@ spec:
         pathType: Prefix
         backend:
           service:
+            name: autocare360-frontend-service
+            port:
+              number: 3000
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
             name: autocare360-backend-service
             port:
               number: 8080
+      - path: /chat
+        pathType: Prefix
+        backend:
+          service:
+            name: autocare360-chatbot-service
+            port:
+              number: 8000
