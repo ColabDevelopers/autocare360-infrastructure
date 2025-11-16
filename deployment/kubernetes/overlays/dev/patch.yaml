@@ -33,11 +33,3 @@ spec:
       containers:
       - name: autocare360-chatbot
         imagePullPolicy: Never
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: autocare360-config
-  namespace: autocare360
-data:
-  SPRING_PROFILES_ACTIVE: "dev"

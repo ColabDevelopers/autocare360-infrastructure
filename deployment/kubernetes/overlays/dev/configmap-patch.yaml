@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: autocare360-config
+  namespace: autocare360
+data:
+  # Development-specific overrides
+  SPRING_PROFILES_ACTIVE: "dev"
+  ENV: "dev"
+  
+  # Debug settings for development
+  DEBUG: "true"
+  LOG_LEVEL: "DEBUG"
+  LOGGING_LEVEL_COM_AUTOCARE360: "DEBUG"
+  LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY: "DEBUG"
+  
+  # Development URLs (using service names for internal communication)
+  NEXT_PUBLIC_API_URL: "http://autocare360-backend-service:8080"
+  NEXT_PUBLIC_CHATBOT_URL: "http://autocare360-chatbot-service:8000"
+  NEXT_PUBLIC_WS_URL: "ws://autocare360-backend-service:8080/ws"
+  
+  # CORS for local development
+  CORS_ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:8080"

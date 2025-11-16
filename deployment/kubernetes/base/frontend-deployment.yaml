@@ -22,8 +22,51 @@ spec:
         ports:
         - containerPort: 3000
         env:
+        # API Configuration (from ConfigMap)
         - name: NEXT_PUBLIC_API_URL
-          value: "http://autocare360-backend-service:8080"
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: NEXT_PUBLIC_API_URL
+        - name: NEXT_PUBLIC_CHATBOT_URL
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: NEXT_PUBLIC_CHATBOT_URL
+        - name: NEXT_PUBLIC_WS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: NEXT_PUBLIC_WS_URL
+        
+        # Application Configuration (from ConfigMap)
+        - name: NEXT_PUBLIC_APP_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: NEXT_PUBLIC_APP_NAME
+        - name: NEXT_PUBLIC_APP_VERSION
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: NEXT_PUBLIC_APP_VERSION
+        
+        # Feature Flags (from ConfigMap)
+        - name: NEXT_PUBLIC_ENABLE_CHATBOT
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: NEXT_PUBLIC_ENABLE_CHATBOT
+        - name: NEXT_PUBLIC_ENABLE_NOTIFICATIONS
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: NEXT_PUBLIC_ENABLE_NOTIFICATIONS
+        - name: NEXT_PUBLIC_ENABLE_ANALYTICS
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: NEXT_PUBLIC_ENABLE_ANALYTICS
         livenessProbe:
           httpGet:
             path: /

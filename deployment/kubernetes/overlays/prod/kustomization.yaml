@@ -4,3 +4,7 @@ resources:
   - ../../base
 patches:
   - path: patch.yaml
+  - path: configmap-patch.yaml
+    target:
+      kind: ConfigMap
+      name: autocare360-config

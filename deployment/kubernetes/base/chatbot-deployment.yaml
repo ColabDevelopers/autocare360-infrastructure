@@ -22,13 +22,73 @@ spec:
         ports:
         - containerPort: 8000
         env:
+        # Environment Configuration (from ConfigMap)
+        - name: ENV
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: ENV
+        - name: AI_PROVIDER
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: AI_PROVIDER
+        - name: DEBUG
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: DEBUG
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: LOG_LEVEL
+        
+        # AI API Keys (from Secrets)
         - name: OPENAI_API_KEY
           valueFrom:
             secretKeyRef:
               name: autocare360-secrets
               key: OPENAI_API_KEY
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: autocare360-secrets
+              key: GEMINI_API_KEY
+        - name: GROK_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: autocare360-secrets
+              key: GROK_API_KEY
+        
+        # AI Model Configuration (from ConfigMap)
+        - name: OPENAI_MODEL
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: OPENAI_MODEL
+        - name: OPENAI_MAX_TOKENS
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: OPENAI_MAX_TOKENS
+        - name: GEMINI_MODEL
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: GEMINI_MODEL
+        - name: GROK_MODEL
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: GROK_MODEL
+        
+        # MySQL Configuration
         - name: MYSQL_HOST
-          value: "mysql-service"
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: MYSQL_HOST
         - name: MYSQL_USER
           valueFrom:
             secretKeyRef:
@@ -44,18 +104,23 @@ spec:
             secretKeyRef:
               name: autocare360-secrets
               key: MYSQL_DATABASE
+        
+        # Redis Configuration (from ConfigMap)
         - name: REDIS_URL
-          value: "redis://redis-service:6379"
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: REDIS_URL
         - name: REDIS_HOST
-          value: "redis-service"
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: REDIS_HOST
         - name: REDIS_PORT
-          value: "6379"
-        - name: AI_PROVIDER
-          value: "openai"
-        - name: DEBUG
-          value: "false"
-        - name: LOG_LEVEL
-          value: "INFO"
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: REDIS_PORT
         livenessProbe:
           httpGet:
             path: /health

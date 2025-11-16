@@ -27,16 +27,12 @@ spec:
         ports:
         - containerPort: 8080
         env:
+        # Database Configuration (from Secrets)
         - name: DB_URL
           valueFrom:
             secretKeyRef:
               name: autocare360-secrets
               key: DB_URL
-        - name: JWT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: autocare360-secrets
-              key: JWT_SECRET
         - name: MYSQL_USER
           valueFrom:
             secretKeyRef:
@@ -47,11 +43,52 @@ spec:
             secretKeyRef:
               name: autocare360-secrets
               key: MYSQL_PASSWORD
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: autocare360-secrets
+              key: JWT_SECRET
+        
+        # Application Configuration (from ConfigMap)
         - name: SPRING_PROFILES_ACTIVE
           valueFrom:
             configMapKeyRef:
               name: autocare360-config
               key: SPRING_PROFILES_ACTIVE
+        - name: SERVER_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: SERVER_PORT
+        - name: CORS_ALLOWED_ORIGINS
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: CORS_ALLOWED_ORIGINS
+        
+        # Logging Configuration (from ConfigMap)
+        - name: LOGGING_LEVEL_COM_AUTOCARE360
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: LOGGING_LEVEL_COM_AUTOCARE360
+        - name: LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY
+        
+        # Actuator Configuration (from ConfigMap)
+        - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+        - name: MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS
+          valueFrom:
+            configMapKeyRef:
+              name: autocare360-config
+              key: MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS
         resources:
           requests:
             memory: "512Mi"
@@ -63,11 +100,23 @@ spec:
           httpGet:
             path: /actuator/health
             port: 8080
-          initialDelaySeconds: 60
-          periodSeconds: 30
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
         readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 20
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        startupProbe:
           httpGet:
             path: /actuator/health
             port: 8080
-          initialDelaySeconds: 120
-          periodSeconds: 10
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 30

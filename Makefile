@@ -1,78 +1,101 @@
-# Makefile for AutoCare360 Infrastructure
+# AutoCare360 Infrastructure
+.PHONY: setup clean status start stop restart logs
 
-ROOT_DIR := $(dir $(realpath $(firstword $(MAKEFILE_LIST))))
+# Variables
+NAMESPACE := autocare360
+KUBECTL := kubectl
+DOCKER := docker
 
-.PHONY: build-all build-backend build-frontend build-chatbot deploy-dev deploy-down deploy-prod validate clean
+# Detect OS
+ifeq ($(OS),Windows_NT)
+	SHELL := powershell.exe
+	.SHELLFLAGS := -NoProfile -Command
+	RM := Remove-Item -Recurse -Force
+	MKDIR := New-Item -ItemType Directory -Force
+	CP := Copy-Item
+	TEST_FILE := Test-Path
+	NULL := >$$null 2>&1
+else
+	RM := rm -rf
+	MKDIR := mkdir -p
+	CP := cp
+	TEST_FILE := test -f
+	NULL := >/dev/null 2>&1
+endif
 
-# Build all Docker images
-build-all: build-backend build-frontend build-chatbot
-
-# Build backend image
-build-backend:
-	cd $(ROOT_DIR)../dev-autocare360-backend && \
-	docker build -t ghcr.io/colabdevelopers/dev-autocare360-backend:latest .
-
-# Build frontend image
-build-frontend:
-	cd $(ROOT_DIR)../dev-autocare360-frontend && \
-	docker build -t ghcr.io/colabdevelopers/dev-autocare360-frontend:latest .
-
-# Build chatbot image
-build-chatbot:
-	cd $(ROOT_DIR)../autocare360-chatbot && \
-	docker build -t ghcr.io/colabdevelopers/autocare360-chatbot:latest .
-
-# Deploy to local development environment using Kubernetes
-deploy-dev: build-all
-	kubectl create namespace autocare360 --dry-run=client -o yaml | kubectl apply -f - && \
-	cd $(ROOT_DIR)deployment/kubernetes && \
-	kubectl apply -k overlays/dev/
-
-# Stop local development deployment
-deploy-down:
-	cd $(ROOT_DIR)deployment/kubernetes && \
-	kubectl delete -k overlays/dev/ --ignore-not-found=true && \
-	kubectl delete namespace autocare360 --ignore-not-found=true
-
-# Deploy to production environment using Kubernetes
-deploy-prod: build-all
-	kubectl create namespace autocare360 --dry-run=client -o yaml | kubectl apply -f - && \
-	cd $(ROOT_DIR)deployment/kubernetes && \
-	kubectl apply -k overlays/prod/
-
-# Validate Kubernetes manifests
-validate:
-	cd $(ROOT_DIR)deployment/kubernetes/overlays/dev && \
-	kubectl kustomize . | kubectl apply --dry-run=client -f -
-
-# Encode secrets for GitHub (helper function)
-encode-secret:
-	@echo "Usage: make encode-secret SECRET_NAME=value"
-	@echo "Example: make encode-secret SECRET_NAME=JWT_SECRET SECRET_VALUE=your_secret_here"
-	@if [ -z "$(SECRET_NAME)" ] || [ -z "$(SECRET_VALUE)" ]; then \
-		echo "Error: SECRET_NAME and SECRET_VALUE must be provided"; \
-		echo "Example: make encode-secret SECRET_NAME=JWT_SECRET SECRET_VALUE=your_secret_here"; \
-		exit 1; \
-	fi
-	@echo "Base64 encoded $(SECRET_NAME):"
-	@echo -n "$(SECRET_VALUE)" | base64
-
-# Show help for encoding secrets
-secrets-help:
-	@echo "GitHub Secrets Encoding Help:"
-	@echo "=============================="
-	@echo "Use 'make encode-secret SECRET_NAME=<name> SECRET_VALUE=<value>' to encode secrets"
+# Setup everything
+setup:
+	@echo "Setting up AutoCare360..."
+ifeq ($(OS),Windows_NT)
+	@if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+	@$(KUBECTL) create namespace $(NAMESPACE) 2>$$null; if ($$?) {} else { echo "Namespace exists" }
+else
+	@test -f .env || cp .env.example .env
+	@$(KUBECTL) create namespace $(NAMESPACE) 2>/dev/null || echo "Namespace exists"
+endif
+	@$(KUBECTL) create secret generic autocare360-secrets --from-env-file=.env -n $(NAMESPACE) --dry-run=client -o yaml | $(KUBECTL) apply -f -
+	@$(KUBECTL) create configmap autocare360-config --from-env-file=.env -n $(NAMESPACE) --dry-run=client -o yaml | $(KUBECTL) apply -f -
+ifeq ($(OS),Windows_NT)
+	@if (Test-Path ..\dev-autocare360-backend) { cd ..\dev-autocare360-backend; $(DOCKER) build -t ghcr.io/colabdevelopers/dev-autocare360-backend:latest . }
+	@if (Test-Path ..\dev-autocare360-frontend) { cd ..\dev-autocare360-frontend; $(DOCKER) build -t ghcr.io/colabdevelopers/dev-autocare360-frontend:latest . }
+	@if (Test-Path ..\autocare360-chatbot) { cd ..\autocare360-chatbot; $(DOCKER) build -t ghcr.io/colabdevelopers/autocare360-chatbot:latest . }
+else
+	@if [ -d ../dev-autocare360-backend ]; then cd ../dev-autocare360-backend && $(DOCKER) build -t ghcr.io/colabdevelopers/dev-autocare360-backend:latest .; fi
+	@if [ -d ../dev-autocare360-frontend ]; then cd ../dev-autocare360-frontend && $(DOCKER) build -t ghcr.io/colabdevelopers/dev-autocare360-frontend:latest .; fi
+	@if [ -d ../autocare360-chatbot ]; then cd ../autocare360-chatbot && $(DOCKER) build -t ghcr.io/colabdevelopers/autocare360-chatbot:latest .; fi
+endif
+	@$(KUBECTL) apply -k deployment/kubernetes/overlays/dev/
 	@echo ""
-	@echo "Required secrets:"
-	@echo "- MYSQL_ROOT_PASSWORD"
-	@echo "- MYSQL_DATABASE"
-	@echo "- MYSQL_USER"
-	@echo "- MYSQL_PASSWORD"
-	@echo "- JWT_SECRET"
-	@echo "- OPENAI_API_KEY"
-	@echo "- DB_URL"
+	@echo "Setup complete!"
 	@echo ""
-	@echo "Example:"
-	@echo "make encode-secret SECRET_NAME=JWT_SECRET SECRET_VALUE=my_secure_jwt_secret"
-	docker rmi ghcr.io/colabdevelopers/dev-autocare360-frontend:latest --force || true
-	docker rmi ghcr.io/colabdevelopers/autocare360-chatbot:latest --force || true
+	@echo "Run: make start"
+
+# Start all services
+start:
+	@echo "Starting all services in background..."
+ifeq ($(OS),Windows_NT)
+	@Start-Process powershell -ArgumentList "-NoExit", "-Command", "kubectl port-forward -n $(NAMESPACE) svc/autocare360-frontend-service 3000:3000"
+	@Start-Process powershell -ArgumentList "-NoExit", "-Command", "kubectl port-forward -n $(NAMESPACE) svc/autocare360-backend-service 8080:8080"
+	@Start-Process powershell -ArgumentList "-NoExit", "-Command", "kubectl port-forward -n $(NAMESPACE) svc/autocare360-chatbot-service 5000:8000"
+else
+	@$(KUBECTL) port-forward -n $(NAMESPACE) svc/autocare360-frontend-service 3000:3000 > /dev/null 2>&1 & \
+	$(KUBECTL) port-forward -n $(NAMESPACE) svc/autocare360-backend-service 8080:8080 > /dev/null 2>&1 & \
+	$(KUBECTL) port-forward -n $(NAMESPACE) svc/autocare360-chatbot-service 5000:8000 > /dev/null 2>&1 &
+endif
+	@echo ""
+	@echo "Services started:"
+	@echo "  Frontend: http://localhost:3000"
+	@echo "  Backend:  http://localhost:8080"
+	@echo "  Chatbot:  http://localhost:5000"
+	@echo ""
+ifeq ($(OS),Windows_NT)
+	@echo "Close the PowerShell windows to stop port forwarding"
+else
+	@echo "Run 'make stop' to stop port forwarding"
+endif
+
+	@echo "Run 'make stop' to stop port forwarding"
+
+# Show status
+status:
+	@$(KUBECTL) get deployments,pods,svc -n $(NAMESPACE)
+
+# Restart all deployments
+restart:
+	@$(KUBECTL) rollout restart deployment -n $(NAMESPACE)
+
+# Stop port forwarding
+stop:
+ifeq ($(OS),Windows_NT)
+	@Get-Process | Where-Object {$$_.CommandLine -like "*port-forward*$(NAMESPACE)*"} | Stop-Process -Force 2>$$null; echo "Port forwarding stopped"
+else
+	@pkill -f "port-forward.*$(NAMESPACE)" || killall kubectl || echo "Port forwarding stopped"
+endif
+
+# Delete everything
+clean:
+	@$(KUBECTL) delete namespace $(NAMESPACE)
+
+# Show logs (usage: make logs POD=backend)
+logs:
+	@$(KUBECTL) logs -f -n $(NAMESPACE) -l app=autocare360-$(POD) --tail=100

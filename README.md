@@ -1,183 +1,606 @@
-# AutoCare360 Infrastructure
+# AutoCare360 Kubernetes Infrastructure
 
-This repository contains the infrastructure-as-code for deploying the AutoCare360 application stack, which includes:
+Complete Kubernetes deployment configuration for AutoCare360 with proper environment variable management.
 
-- **Frontend**: Next.js-based web application
-- **Backend**: Java Spring Boot API server
-- **Chatbot**: Python FastAPI-based AI assistant
-- **Database**: MySQL database with persistent storage
+## 🚀 Quick Start (Development)
 
-## Documentation
+### Step 1: Setup Environment Variables
 
-- [Quick Start](README.md#quick-start)
-- [Kubernetes Deployment](docs/KUBERNETES.md)
-- [Docker Builds](docs/DOCKER.md)
-- [Development Setup](docs/DEVELOPMENT.md)
-- [GitHub Secrets Setup](docs/GITHUB_SECRETS.md)
+```powershell
+# Copy the environment template
+copy .env.example .env
+```
 
-## Architecture
+**Edit `.env`** with your actual values:
+- Replace `MYSQL_ROOT_PASSWORD` with a secure password
+- Replace `MYSQL_PASSWORD` with a secure password  
+- Replace `JWT_SECRET` with a strong secret (min 256 bits)
+- Replace `OPENAI_API_KEY` with your OpenAI API key (or other AI provider keys)
+- Update any other placeholder values as needed
 
-The application is containerized and deployed to Kubernetes with the following components:
+### Step 2: Create Kubernetes Namespace
 
-- **Namespace**: `autocare360`
-- **Ingress**: Path-based routing on `autocare360.local`
-  - `/` → Frontend (port 3000)
-  - `/api` → Backend (port 8080)
-  - `/chat` → Chatbot (port 8000)
-- **Database**: MySQL 8.0 with persistent storage
-- **Cache**: Redis 7 for session management and caching
-- **Security**: RBAC, secrets management, non-root containers
+```powershell
+kubectl create namespace autocare360
+```
 
-## Prerequisites
+### Step 3: Create Secrets
 
-- Docker and Docker Compose
-- Kubernetes cluster (local: minikube/kind, cloud: EKS/GKE/AKS)
-- kubectl configured
-- GitHub Container Registry access (for pulling images)
+```powershell
+kubectl create secret generic autocare360-secrets `
+  --from-env-file=.env `
+  -n autocare360
+```
 
-## Quick Start
+### Step 4: Deploy to Kubernetes
 
-### Local Development
+```powershell
+kubectl apply -k deployment\kubernetes\overlays\dev
+```
 
-1. **Clone all repositories**:
-   ```bash
-   git clone https://github.com/ColabDevelopers/autocare360-infrastructure.git
-   git clone https://github.com/ColabDevelopers/dev-autocare360-backend.git
-   git clone https://github.com/ColabDevelopers/dev-autocare360-frontend.git
-   git clone https://github.com/ColabDevelopers/autocare360-chatbot.git
+### Step 5: Wait for Pods to be Ready
+
+```powershell
+# Check status
+kubectl get pods -n autocare360
+
+# Wait for all pods to be Running
+kubectl wait --for=condition=ready pod -l app=mysql -n autocare360 --timeout=300s
+kubectl wait --for=condition=ready pod -l app=redis -n autocare360 --timeout=300s
+kubectl wait --for=condition=ready pod -l app=autocare360-backend -n autocare360 --timeout=300s
+kubectl wait --for=condition=ready pod -l app=autocare360-frontend -n autocare360 --timeout=300s
+kubectl wait --for=condition=ready pod -l app=autocare360-chatbot -n autocare360 --timeout=300s
+```
+
+### Step 6: Access Services
+
+Open **three separate PowerShell/CMD terminals** and run:
+
+```powershell
+# Terminal 1 - Frontend
+kubectl port-forward -n autocare360 svc/autocare360-frontend-service 3000:80
+
+# Terminal 2 - Backend
+kubectl port-forward -n autocare360 svc/autocare360-backend-service 8080:8080
+
+# Terminal 3 - Chatbot
+kubectl port-forward -n autocare360 svc/autocare360-chatbot-service 8000:8000
+```
+
+### Step 7: Access the Application
+
+Visit in your browser:
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:8080
+- **Chatbot API**: http://localhost:8000
+- **Backend Health**: http://localhost:8080/actuator/health
+- **Chatbot Health**: http://localhost:8000/health
+
+## 📋 Prerequisites
+
+Before you begin, ensure you have:
+
+- ✅ **Docker Desktop** with Kubernetes enabled
+- ✅ **kubectl** installed and configured
+- ✅ **Access to your application images** (or build them first)
+
+### Windows Setup
+1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+2. Enable Kubernetes in Docker Desktop settings (Settings → Kubernetes → Enable Kubernetes)
+3. kubectl is included with Docker Desktop
+4. Verify installation:
+   ```powershell
+   kubectl version --client
+   docker --version
    ```
 
-2. **Configure GitHub Secrets** (for production deployment):
-   See [GitHub Secrets Setup](docs/GITHUB_SECRETS.md) for detailed instructions on configuring secrets for automated deployment.
-
-3. **Update secrets** (for local development - optional):
-   Edit `deployment/kubernetes/base/secrets.yaml` with your actual credentials, or use the provided defaults.
-
-3. **Deploy to local cluster**:
+### Linux/Mac Setup
+1. Install Docker and kubectl
+2. Enable Kubernetes in Docker Desktop or use Minikube
+3. Verify installation:
    ```bash
-   make deploy-dev
+   kubectl version --client
+   docker --version
    ```
 
-4. **Access the application**:
-   - Add to `/etc/hosts`: `127.0.0.1 autocare360.local`
-   - Open http://autocare360.local
+---
 
-5. **Stop deployment**:
-   ```bash
-   make deploy-down
-   ```
+## 🏭 Production Deployment
 
-### Production Deployment
+### Step 1: Setup Production Environment Variables
 
-1. **Build and tag images**:
-   ```bash
-   make build-all
-   # Tag with version: docker tag ...:latest ...:v1.0.0
-   ```
+```powershell
+# Copy the environment template
+copy .env.example .env.prod
+```
 
-2. **Push images to registry**:
-   ```bash
-   docker push ghcr.io/colabdevelopers/dev-autocare360-backend:latest
-   docker push ghcr.io/colabdevelopers/dev-autocare360-frontend:latest
-   docker push ghcr.io/colabdevelopers/autocare360-chatbot:latest
-   ```
+**Edit `.env.prod`** with **STRONG PRODUCTION VALUES**:
+- Use strong, unique passwords (min 16 characters)
+- Generate a secure JWT secret (min 256 bits)
+- Use production API keys
+- Update `SPRING_PROFILES_ACTIVE=prod`
+- Update `ENV=prod`
+- Update URLs to production domains
+- Update CORS origins to production domains
+- **Never reuse dev credentials in production!**
 
-3. **Deploy to production**:
-   ```bash
-   make deploy-prod
-   ```
+### Step 2: Create Production Secrets
+
+```powershell
+# Create namespace (if not exists)
+kubectl create namespace autocare360
+
+# Create production secrets
+kubectl create secret generic autocare360-secrets `
+  --from-env-file=.env.prod `
+  -n autocare360
+```
+
+### Step 3: Deploy to Production
+
+```powershell
+kubectl apply -k deployment\kubernetes\overlays\prod
+```
+
+### Step 4: Verify Production Deployment
+
+```powershell
+# Check all pods are running
+kubectl get pods -n autocare360
+
+# Check services
+kubectl get svc -n autocare360
+
+# View logs if needed
+kubectl logs -f deployment/autocare360-backend -n autocare360
+```
+
+---
+
+## 🔧 Common Operations
+
+### Update Environment Variables
+
+If you need to change environment variables after deployment:
+
+```powershell
+# Update the secret
+kubectl create secret generic autocare360-secrets `
+  --from-env-file=.env `
+  -n autocare360 `
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# Restart deployments to pick up changes
+kubectl rollout restart deployment/autocare360-backend -n autocare360
+kubectl rollout restart deployment/autocare360-frontend -n autocare360
+kubectl rollout restart deployment/autocare360-chatbot -n autocare360
+```
+
+### View Logs
+
+```powershell
+# Backend logs
+kubectl logs -f deployment/autocare360-backend -n autocare360
+
+# Frontend logs
+kubectl logs -f deployment/autocare360-frontend -n autocare360
+
+# Chatbot logs
+kubectl logs -f deployment/autocare360-chatbot -n autocare360
+
+# MySQL logs
+kubectl logs -f deployment/mysql -n autocare360
+```
+
+### Check Pod Status
+
+```powershell
+# Get all resources
+kubectl get all -n autocare360
+
+# Describe a specific pod
+kubectl describe pod <pod-name> -n autocare360
+
+# Get pod events
+kubectl get events -n autocare360 --sort-by='.lastTimestamp'
+```
+
+### Restart Services
+
+```powershell
+# Restart a specific deployment
+kubectl rollout restart deployment/autocare360-backend -n autocare360
+
+# Check rollout status
+kubectl rollout status deployment/autocare360-backend -n autocare360
+
+# Restart all deployments
+kubectl rollout restart deployment -n autocare360
+```
+
+### Scale Services
+
+```powershell
+# Scale backend to 3 replicas
+kubectl scale deployment/autocare360-backend --replicas=3 -n autocare360
+
+# Scale frontend to 2 replicas
+kubectl scale deployment/autocare360-frontend --replicas=2 -n autocare360
+```
+
+### Clean Up Everything
+
+```powershell
+# Delete entire namespace (removes everything)
+kubectl delete namespace autocare360
+
+# Or delete specific resources
+kubectl delete -k deployment\kubernetes\overlays\dev
+```
+
+---
+
+## 📚 Available Commands
+
+### Using Makefile (Optional - Requires Git Bash/WSL)
+
+```bash
+make help              # Show all commands
+make check-prereqs     # Verify tools installed
+make setup             # Complete setup (build + deploy)
+make deploy            # Deploy to Kubernetes
+make status            # Show deployment status
+make logs POD=backend  # View logs
+make port-forward      # Forward ports to localhost
+make restart           # Restart all deployments
+make clean             # Delete all resources
+```
+
+---
+
+## 🐳 Building Docker Images (If Needed)
+
+If you need to build the Docker images locally:
+
+### Step 1: Build Backend Image
+
+```powershell
+cd ..\dev-autocare360-backend
+docker build -t ghcr.io/colabdevelopers/dev-autocare360-backend:latest .
+cd ..\autocare360-infrastructure
+```
+
+### Step 2: Build Frontend Image
+
+```powershell
+cd ..\dev-autocare360-frontend
+docker build -t ghcr.io/colabdevelopers/dev-autocare360-frontend:latest .
+cd ..\autocare360-infrastructure
+```
+
+### Step 3: Build Chatbot Image
+
+```powershell
+cd ..\autocare360-chatbot
+docker build -t ghcr.io/colabdevelopers/autocare360-chatbot:latest .
+cd ..\autocare360-infrastructure
+```
+
+### Step 4: Verify Images
+
+```powershell
+docker images | findstr autocare360
+```
+
+---
+
+### Check Status
+```powershell
+kubectl get all -n autocare360
+```
+
+### Clean Up
+```powershell
+kubectl delete namespace autocare360
+```
 
 ## Configuration
 
-### Secrets Management
-
-Secrets are stored in `deployment/kubernetes/base/secrets.yaml`. Update with base64-encoded values:
-
-```bash
-echo -n "your-secret" | base64
-```
-
-Required secrets:
-- `MYSQL_ROOT_PASSWORD`
-- `MYSQL_DATABASE`
-- `MYSQL_USER`
-- `MYSQL_PASSWORD`
-- `DB_URL`
-- `JWT_SECRET`
-- `OPENAI_API_KEY`
-
 ### Environment Variables
 
-- **Backend**: Configured via ConfigMap (`SPRING_PROFILES_ACTIVE`)
-- **Frontend**: `NEXT_PUBLIC_API_URL` points to backend service
-- **Chatbot**: Database and OpenAI credentials via secrets
+All configuration is centralized in the `.env.example` file. Copy it to `.env` and fill in your actual values.
 
-## Development
+The `.env` file contains variables for all three services:
+- **Backend** (Spring Boot) - Database, JWT, CORS, Logging
+- **Frontend** (Next.js) - API URLs, Feature Flags
+- **Chatbot** (FastAPI) - AI Providers, Database, Redis
 
-### Building Individual Components
+#### Quick Setup
 
-```bash
-make build-backend    # Build backend image
-make build-frontend   # Build frontend image
-make build-chatbot    # Build chatbot image
-make build-all        # Build all images
+**Development:**
+```powershell
+# Copy .env.example and edit with your values
+copy .env.example .env
+
+# Create secrets
+kubectl create secret generic autocare360-secrets --from-env-file=.env -n autocare360
 ```
 
-### Validation
+**Production:**
+```powershell
+# Copy .env.example and edit with PRODUCTION values
+copy .env.example .env.prod
+# Update SPRING_PROFILES_ACTIVE=prod, ENV=prod, and production URLs
 
-Validate manifests without applying:
-```bash
-make validate
+# Create secrets
+kubectl create secret generic autocare360-secrets --from-env-file=.env.prod -n autocare360
 ```
 
-### Cleanup
+#### Key Variables
 
-Remove Docker images:
-```bash
-make clean
+**Backend (Spring Boot):**
+- Database: `DB_URL`, `MYSQL_USER`, `MYSQL_PASSWORD`
+- Security: `JWT_SECRET` (minimum 256 bits)
+- CORS: `CORS_ALLOWED_ORIGINS`
+
+**Frontend (Next.js):**
+- APIs: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_CHATBOT_URL`
+- Features: `NEXT_PUBLIC_ENABLE_CHATBOT`, `NEXT_PUBLIC_ENABLE_ANALYTICS`
+
+**Chatbot (FastAPI):**
+- AI: `AI_PROVIDER`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GROK_API_KEY`
+- Database: `MYSQL_HOST`, `MYSQL_USER`, `MYSQL_PASSWORD`
+- Cache: `REDIS_URL`
+
+---
+
+## 🗂️ Directory Structure
+
+```
+autocare360-infrastructure/
+├── deployment/
+│   └── kubernetes/
+│       ├── base/                          # Base Kubernetes manifests
+│       │   ├── backend-deployment.yaml
+│       │   ├── backend-service.yaml
+│       │   ├── frontend-deployment.yaml
+│       │   ├── frontend-service.yaml
+│       │   ├── chatbot-deployment.yaml
+│       │   ├── chatbot-service.yaml
+│       │   ├── db-mysql-deployment.yaml
+│       │   ├── db-mysql-service.yaml
+│       │   ├── db-redis-deployment.yaml
+│       │   ├── db-redis-service.yaml
+│       │   ├── configmap.yaml             # Non-sensitive config
+│       │   ├── secrets.yaml               # Secret placeholders
+│       │   ├── namespace.yaml
+│       │   ├── kustomization.yaml
+│       │   ├── network/
+│       │   │   └── ingress.yaml
+│       │   ├── rbac/
+│       │   │   ├── role.yaml
+│       │   │   ├── rolebinding.yaml
+│       │   │   └── serviceaccount.yaml
+│       │   └── storage/
+│       │       ├── mysql-pvc.yaml
+│       │       └── redis-pvc.yaml
+│       ├── overlays/
+│       │   ├── dev/                       # Development overrides
+│       │   │   ├── kustomization.yaml
+│       │   │   ├── patch.yaml
+│       │   │   ├── configmap-patch.yaml
+│       │   │   └── .env.template          # Secret template
+│       │   └── prod/                      # Production overrides
+│       │       ├── kustomization.yaml
+│       │       ├── patch.yaml
+│       │       ├── configmap-patch.yaml
+│       │       └── .env.template          # Secret template
+│       └── ENV_VARIABLES.md               # Complete env var docs
+├── Makefile                                # Linux/Mac commands
+├── README.md                               # This file
+├── .gitignore                              # Protects secrets
+└── ENVIRONMENT_SETUP_SUMMARY.md            # Quick reference
+
 ```
 
-## Monitoring
+---
 
-The backend includes Prometheus metrics at `/actuator/prometheus` and health checks at `/actuator/health`.
+## ❗ Troubleshooting
 
-## Troubleshooting
+### Problem: Pods Not Starting
 
-### Common Issues
-
-1. **Image pull errors**: Ensure images are pushed to registry and accessible
-2. **Database connection**: Check MySQL service and secrets
-3. **Cache connection**: Verify Redis service is running and accessible
-4. **Ingress not working**: Verify ingress controller is installed (e.g., `kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.1/deploy/static/provider/cloud/deploy.yaml`)
-
-### Logs
-
-View pod logs:
-```bash
-kubectl logs -n autocare360 deployment/autocare360-backend
-kubectl logs -n autocare360 deployment/autocare360-frontend
-kubectl logs -n autocare360 deployment/autocare360-chatbot
-kubectl logs -n autocare360 deployment/mysql
-kubectl logs -n autocare360 deployment/redis
+**Check pod status:**
+```powershell
+kubectl get pods -n autocare360
+kubectl describe pod <pod-name> -n autocare360
 ```
 
-### Port Forwarding (for debugging)
+**Common causes:**
+- Secrets not created: Run Step 3 again
+- Wrong secret values: Check your `.env` file
+- Image pull errors: Build images locally (see Building Docker Images section)
 
-```bash
-kubectl port-forward -n autocare360 svc/autocare360-frontend-service 3000:3000
-kubectl port-forward -n autocare360 svc/autocare360-backend-service 8080:8080
-kubectl port-forward -n autocare360 svc/autocare360-chatbot-service 8000:8000
-kubectl port-forward -n autocare360 svc/mysql-service 3306:3306
-kubectl port-forward -n autocare360 svc/redis-service 6379:6379
+### Problem: Connection Refused / Service Unavailable
+
+**Check services:**
+```powershell
+kubectl get svc -n autocare360
 ```
 
-## Contributing
+**Verify port-forwards are running:**
+- Make sure you have separate terminals running the port-forward commands
+- Check that no other services are using ports 3000, 8080, or 8000
 
-1. Make changes to manifests in `deployment/kubernetes/`
-2. Test with `make validate`
-3. Update documentation as needed
-4. Submit PR with description of changes
+### Problem: Database Connection Errors
 
-## License
+**Check MySQL pod:**
+```powershell
+kubectl logs -f deployment/mysql -n autocare360
+```
 
-See LICENSE file in root directory.
+**Verify secrets:**
+```powershell
+# Check if secret exists
+kubectl get secret autocare360-secrets -n autocare360
+
+# View secret keys (not values)
+kubectl get secret autocare360-secrets -n autocare360 -o jsonpath="{.data}" | findstr "MYSQL"
+```
+
+### Problem: Backend Health Check Failing
+
+**Check backend logs:**
+```powershell
+kubectl logs -f deployment/autocare360-backend -n autocare360
+```
+
+**Common issues:**
+- Database not ready: Wait for MySQL pod to be Running
+- Wrong DB credentials: Verify your `.env` file
+- Wrong DB_URL: Should be `jdbc:mysql://mysql-service:3306/autocare360`
+
+### Problem: Need to Start Fresh
+
+**Clean everything and redeploy:**
+```powershell
+# Delete everything
+kubectl delete namespace autocare360
+
+# Wait a moment, then start over from Step 2
+kubectl create namespace autocare360
+# ... continue with steps
+```
+
+### Problem: Environment Variables Not Updating
+
+**After changing `.env`:**
+```powershell
+# Recreate the secret
+kubectl create secret generic autocare360-secrets `
+  --from-env-file=.env `
+  -n autocare360 `
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# Restart all deployments
+kubectl rollout restart deployment -n autocare360
+```
+
+### Getting Help
+
+**View all resources:**
+```powershell
+kubectl get all -n autocare360
+```
+
+**View recent events:**
+```powershell
+kubectl get events -n autocare360 --sort-by='.lastTimestamp'
+```
+
+**Check resource usage:**
+```powershell
+kubectl top pods -n autocare360
+```
+
+---
+
+## 📖 Additional Documentation
+
+All environment variables are documented in `.env.example` with clear comments for each section.
+
+---
+
+## 🔐 Security Notes
+
+⚠️ **Important Security Practices:**
+
+1. **Never commit `.env.dev` or `.env.prod` files** - Only commit `.env.template` files
+2. **Use strong passwords** in production (minimum 16 characters, mixed case, numbers, symbols)
+3. **Generate secure JWT secrets** (minimum 256 bits, use a generator)
+4. **Rotate secrets regularly** - Especially in production
+5. **Use different credentials** for dev and prod environments
+6. **Consider using external secret managers** for production:
+   - Kubernetes External Secrets Operator
+   - HashiCorp Vault
+   - Cloud provider secret managers (AWS Secrets Manager, Azure Key Vault, etc.)
+
+---
+
+## 🎯 Architecture Overview
+
+The AutoCare360 application consists of:
+
+- **Frontend** (Next.js) - Port 3000
+- **Backend** (Spring Boot) - Port 8080
+- **Chatbot** (FastAPI/Python) - Port 8000
+- **MySQL Database** - Port 3306 (internal)
+- **Redis Cache** - Port 6379 (internal)
+
+### Service Communication
+
+```
+Frontend → Backend API → MySQL Database
+Frontend → Chatbot API → MySQL Database
+                      → Redis Cache
+```
+
+### Environment Variables Flow
+
+```
+.env.template (safe to commit)
+      ↓
+.env.dev/.env.prod (NEVER commit)
+      ↓
+Kubernetes Secret (base64 encoded)
+      ↓
+Pod Environment Variables
+      ↓
+Application Configuration
+```
+
+---
+
+## 💡 Tips & Best Practices
+
+### Development
+- Use debug logging to troubleshoot issues
+- Keep dev credentials simple but secure
+- Use `kubectl logs -f` to watch logs in real-time
+- Test one service at a time when debugging
+
+### Production
+- Always use strong, unique credentials
+- Enable production-level logging (INFO/WARN)
+- Use multiple replicas for high availability
+- Set up monitoring and alerting
+- Regular backups of MySQL data
+- Use Ingress for external access (not port-forward)
+
+### Kustomize
+- Base contains common configuration
+- Overlays contain environment-specific patches
+- Dev overlay: debug settings, single replicas
+- Prod overlay: optimized settings, multiple replicas
+
+---
+
+## 📝 License
+
+This infrastructure configuration is part of the AutoCare360 project.
+
+---
+
+## 🤝 Contributing
+
+When contributing to this infrastructure:
+
+1. Never commit actual secrets or credentials
+2. Test changes in dev environment first
+3. Update documentation when adding new environment variables
+4. Follow the existing structure and naming conventions
+5. Use meaningful commit messages
+
+---
+
+**For detailed setup instructions and troubleshooting, refer to the step-by-step guide above.**
+

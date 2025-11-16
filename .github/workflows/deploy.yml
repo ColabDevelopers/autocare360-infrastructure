@@ -1,0 +1,211 @@
+name: Continuous Deployment
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      triggered_by:
+        description: 'Repository that triggered this deployment'
+        required: false
+        default: 'manual'
+        type: string
+      commit_sha:
+        description: 'Commit SHA from triggering repository'
+        required: false
+        type: string
+      commit_message:
+        description: 'Commit message from triggering repository'
+        required: false
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: ghcr.io/colabdevelopers/dev-autocare360-backend
+  FRONTEND_IMAGE: ghcr.io/colabdevelopers/dev-autocare360-frontend
+  CHATBOT_IMAGE: ghcr.io/colabdevelopers/autocare360-chatbot
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy to Production
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      
+    steps:
+      - name: Display trigger information
+        run: |
+          echo "Deployment triggered by: ${{ inputs.triggered_by || 'push to main' }}"
+          if [ -n "${{ inputs.commit_sha }}" ]; then
+            echo "Triggering commit: ${{ inputs.commit_sha }}"
+            echo "Commit message: ${{ inputs.commit_message }}"
+          fi
+          
+      - name: Checkout infrastructure repository
+        uses: actions/checkout@v4
+        with:
+          path: infrastructure
+          
+      - name: Checkout backend repository
+        uses: actions/checkout@v4
+        with:
+          repository: ColabDevelopers/dev-autocare360-backend
+          path: backend
+          token: ${{ secrets.GH_PAT || github.token }}
+          
+      - name: Checkout frontend repository
+        uses: actions/checkout@v4
+        with:
+          repository: ColabDevelopers/dev-autocare360-frontend
+          path: frontend
+          token: ${{ secrets.GH_PAT || github.token }}
+          
+      - name: Checkout chatbot repository
+        uses: actions/checkout@v4
+        with:
+          repository: ColabDevelopers/autocare360-chatbot
+          path: chatbot
+          token: ${{ secrets.GH_PAT || github.token }}
+          
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Extract metadata for backend
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.BACKEND_IMAGE }}
+          tags: |
+            type=sha,prefix={{branch}}-
+            type=ref,event=branch
+            type=raw,value=latest,enable={{is_default_branch}}
+            
+      - name: Extract metadata for frontend
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.FRONTEND_IMAGE }}
+          tags: |
+            type=sha,prefix={{branch}}-
+            type=ref,event=branch
+            type=raw,value=latest,enable={{is_default_branch}}
+            
+      - name: Extract metadata for chatbot
+        id: meta-chatbot
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.CHATBOT_IMAGE }}
+          tags: |
+            type=sha,prefix={{branch}}-
+            type=ref,event=branch
+            type=raw,value=latest,enable={{is_default_branch}}
+            
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          
+      - name: Build and push chatbot image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./chatbot
+          push: true
+          tags: ${{ steps.meta-chatbot.outputs.tags }}
+          labels: ${{ steps.meta-chatbot.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+          
+      - name: Configure kubectl for production
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG_PROD }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+          
+      - name: Create Kubernetes namespace
+        run: |
+          kubectl create namespace autocare360 --dry-run=client -o yaml | kubectl apply -f -
+          
+      - name: Create/Update Kubernetes secrets
+        run: |
+          cd infrastructure/deployment/kubernetes
+          
+          # Create secrets from GitHub secrets
+          kubectl create secret generic autocare360-secrets \
+            --from-literal=mysql-root-password="${{ secrets.MYSQL_ROOT_PASSWORD }}" \
+            --from-literal=mysql-user="${{ secrets.MYSQL_USER }}" \
+            --from-literal=mysql-password="${{ secrets.MYSQL_PASSWORD }}" \
+            --from-literal=mysql-database="${{ secrets.MYSQL_DATABASE }}" \
+            --from-literal=jwt-secret="${{ secrets.JWT_SECRET }}" \
+            --from-literal=openai-api-key="${{ secrets.OPENAI_API_KEY }}" \
+            --from-literal=db-url="${{ secrets.DB_URL }}" \
+            --namespace=autocare360 \
+            --dry-run=client -o yaml | kubectl apply -f -
+            
+      - name: Deploy to Kubernetes
+        run: |
+          cd infrastructure/deployment/kubernetes
+          kubectl apply -k overlays/prod/ --namespace=autocare360
+          
+      - name: Wait for rollout to complete
+        run: |
+          kubectl rollout status deployment/backend-deployment --namespace=autocare360 --timeout=5m
+          kubectl rollout status deployment/frontend-deployment --namespace=autocare360 --timeout=5m
+          kubectl rollout status deployment/chatbot-deployment --namespace=autocare360 --timeout=5m
+          
+      - name: Verify deployment
+        run: |
+          echo "=== Deployment Status ==="
+          kubectl get deployments --namespace=autocare360
+          echo ""
+          echo "=== Pod Status ==="
+          kubectl get pods --namespace=autocare360
+          echo ""
+          echo "=== Services ==="
+          kubectl get services --namespace=autocare360
+          
+      - name: Create deployment summary
+        run: |
+          echo "### Deployment Summary 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered By:** ${{ inputs.triggered_by || 'push to main' }}" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ inputs.commit_sha }}" ]; then
+            echo "**Triggering Commit:** ${{ inputs.commit_sha }}" >> $GITHUB_STEP_SUMMARY
+            echo "**Commit Message:** ${{ inputs.commit_message }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "**Environment:** Production" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Images Deployed:" >> $GITHUB_STEP_SUMMARY
+          echo "- Backend: \`${{ env.BACKEND_IMAGE }}:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Frontend: \`${{ env.FRONTEND_IMAGE }}:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Chatbot: \`${{ env.CHATBOT_IMAGE }}:latest\`" >> $GITHUB_STEP_SUMMARY
