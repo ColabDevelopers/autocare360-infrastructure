@@ -22,6 +22,8 @@ spec:
         ports:
         - containerPort: 3000
         env:
+        - name: HOST
+          value: "0.0.0.0"
         # API Configuration (from ConfigMap)
         - name: NEXT_PUBLIC_API_URL
           valueFrom:

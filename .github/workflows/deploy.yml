@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - dev
   workflow_dispatch:
     inputs:
       triggered_by:
@@ -140,7 +141,7 @@ jobs:
           cache-to: type=gha,mode=max
           
       - name: Set up kubectl
-        uses: azure/setup-kubectl@v3
+        uses: azure/setup-kubectl@v4
         with:
           version: 'latest'
           
@@ -194,7 +195,7 @@ jobs:
           
       - name: Create deployment summary
         run: |
-          echo "### Deployment Summary 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Triggered By:** ${{ inputs.triggered_by || 'push to main' }}" >> $GITHUB_STEP_SUMMARY
           if [ -n "${{ inputs.commit_sha }}" ]; then

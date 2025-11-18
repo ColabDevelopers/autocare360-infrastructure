@@ -28,64 +28,64 @@ help:
 
 ## setup: Initial setup - create namespace, secrets, and deploy
 setup:
-	@echo "🚀 Setting up AutoCare360..."
-	@test -f .env || (echo "⚠️  Creating .env from template..." && cp .env.example .env && echo "✅ Edit .env with your actual values before deploying!")
-	@$(KUBECTL) create namespace $(NAMESPACE) 2>/dev/null || echo "✓ Namespace already exists"
+	@echo "Setting up AutoCare360..."
+	@test -f .env || (echo "Creating .env from template..." && cp .env.example .env && echo "Edit .env with your actual values before deploying!")
+	@$(KUBECTL) create namespace $(NAMESPACE) 2>/dev/null || echo "Namespace already exists"
 	@$(KUBECTL) create secret generic autocare360-secrets --from-env-file=.env -n $(NAMESPACE) --dry-run=client -o yaml | $(KUBECTL) apply -f -
-	@echo "✓ Secrets configured"
+	@echo "Secrets configured"
 	@$(KUBECTL) apply -k deployment/kubernetes/overlays/dev/
 	@echo ""
-	@echo "✅ Setup complete!"
+	@echo "Setup complete!"
 	@echo ""
-	@echo "📊 Waiting for pods to be ready..."
-	@$(KUBECTL) wait --for=condition=ready pod -l app=mysql -n $(NAMESPACE) --timeout=120s 2>/dev/null || echo "⚠️  MySQL taking longer than expected"
-	@$(KUBECTL) wait --for=condition=ready pod -l app=redis -n $(NAMESPACE) --timeout=120s 2>/dev/null || echo "⚠️  Redis taking longer than expected"
+	@echo "Waiting for pods to be ready..."
+	@$(KUBECTL) wait --for=condition=ready pod -l app=mysql -n $(NAMESPACE) --timeout=120s 2>/dev/null || echo "MySQL taking longer than expected"
+	@$(KUBECTL) wait --for=condition=ready pod -l app=redis -n $(NAMESPACE) --timeout=120s 2>/dev/null || echo "Redis taking longer than expected"
 	@echo ""
-	@echo "🌐 Frontend available at: http://localhost:30000"
-	@echo "💡 For API access, run: make start"
+	@echo "Frontend available at: http://localhost:30000"
+	@echo "For API access, run: make start"
 	@echo ""
 
 ## deploy: Deploy or update all services
 deploy:
-	@echo "📦 Deploying AutoCare360 services..."
+	@echo "Deploying AutoCare360 services..."
 	@$(KUBECTL) apply -k deployment/kubernetes/overlays/dev/
-	@echo "✅ Deployment applied!"
+	@echo "Deployment applied!"
 	@echo ""
 	@make status
 
 ## start: Start port-forwarding for backend and chatbot API access
 start:
-	@echo "🔌 Starting port-forwarding..."
+	@echo "Starting port-forwarding..."
 	@$(KUBECTL) port-forward -n $(NAMESPACE) svc/autocare360-backend-service 8080:8080 > /dev/null 2>&1 & \
 	$(KUBECTL) port-forward -n $(NAMESPACE) svc/autocare360-chatbot-service 8000:8000 > /dev/null 2>&1 &
 	@sleep 2
-	@echo "✅ Port-forwarding started!"
+	@echo "Port-forwarding started!"
 	@echo ""
-	@echo "🌐 Access URLs:"
+	@echo "Access URLs:"
 	@echo "  Frontend:  http://localhost:30000 (NodePort)"
 	@echo "  Backend:   http://localhost:8080 (API)"
 	@echo "  Chatbot:   http://localhost:8000 (API)"
 	@echo ""
-	@echo "💡 Run 'make stop' to stop port-forwarding"
+	@echo "Run 'make stop' to stop port-forwarding"
 	@echo ""
 
 ## stop: Stop all port-forwarding
 stop:
-	@echo "🛑 Stopping port-forwarding..."
+	@echo "Stopping port-forwarding..."
 	@pkill -f "port-forward.*$(NAMESPACE)" 2>/dev/null || echo "No port-forwarding processes found"
-	@echo "✅ Port-forwarding stopped"
+	@echo "Port-forwarding stopped"
 
 ## restart: Restart all deployments (rolling update)
 restart:
-	@echo "🔄 Restarting all deployments..."
+	@echo "Restarting all deployments..."
 	@$(KUBECTL) rollout restart deployment -n $(NAMESPACE)
-	@echo "✅ Restart triggered!"
+	@echo "Restart triggered!"
 	@echo ""
-	@echo "📊 Monitor progress with: make status"
+	@echo "Monitor progress with: make status"
 
 ## status: Show status of all resources
 status:
-	@echo "📊 AutoCare360 Status:"
+	@echo "AutoCare360 Status:"
 	@echo ""
 	@echo "=== Pods ==="
 	@$(KUBECTL) get pods -n $(NAMESPACE)
@@ -101,20 +101,20 @@ status:
 
 ## clean: Delete the namespace and all resources
 clean:
-	@echo "🗑️  WARNING: This will delete the entire $(NAMESPACE) namespace!"
+	@echo "WARNING: This will delete the entire $(NAMESPACE) namespace!"
 	@echo "Press Ctrl+C to cancel, or wait 5 seconds to continue..."
 	@sleep 5
 	@echo "Deleting namespace..."
 	@$(KUBECTL) delete namespace $(NAMESPACE)
-	@echo "✅ Namespace deleted"
+	@echo "Namespace deleted"
 
 ## logs: Show logs for a specific service (usage: make logs POD=backend)
 logs:
 	@if [ -z "$(POD)" ]; then \
-		echo "❌ Error: POD parameter required"; \
+		echo "Error: POD parameter required"; \
 		echo "Usage: make logs POD=backend|frontend|chatbot"; \
 		exit 1; \
 	fi
-	@echo "📋 Logs for autocare360-$(POD):"
+	@echo "Logs for autocare360-$(POD):"
 	@echo ""
 	@$(KUBECTL) logs -f -n $(NAMESPACE) -l app=autocare360-$(POD) --tail=100
