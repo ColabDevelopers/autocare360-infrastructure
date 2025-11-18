@@ -24,6 +24,10 @@ spec:
         env:
         - name: HOST
           value: "0.0.0.0"
+        - name: HOSTNAME
+          value: "0.0.0.0"
+        - name: PORT
+          value: "3000"
         # API Configuration (from ConfigMap)
         - name: NEXT_PUBLIC_API_URL
           valueFrom:
