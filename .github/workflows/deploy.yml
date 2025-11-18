@@ -1,4 +1,4 @@
-name: Continuous Deployment
+name: Deploy
 
 on:
   push:
@@ -23,13 +23,16 @@ on:
 
 env:
   REGISTRY: ghcr.io
+  ORG_NAME: colabdevelopers
   BACKEND_IMAGE: ghcr.io/colabdevelopers/dev-autocare360-backend
   FRONTEND_IMAGE: ghcr.io/colabdevelopers/dev-autocare360-frontend
   CHATBOT_IMAGE: ghcr.io/colabdevelopers/autocare360-chatbot
+  KUBE_NAMESPACE: autocare360
+  DEPLOYMENT_TIMEOUT: 10m
 
 jobs:
-  build-and-deploy:
-    name: Build and Deploy to Production
+  build:
+    name: Build and Deploy
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -45,26 +48,26 @@ jobs:
           fi
           
       - name: Checkout infrastructure repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
         with:
           path: infrastructure
           
       - name: Checkout backend repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
         with:
           repository: ColabDevelopers/dev-autocare360-backend
           path: backend
           token: ${{ secrets.GH_PAT || github.token }}
           
       - name: Checkout frontend repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
         with:
           repository: ColabDevelopers/dev-autocare360-frontend
           path: frontend
           token: ${{ secrets.GH_PAT || github.token }}
           
       - name: Checkout chatbot repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
         with:
           repository: ColabDevelopers/autocare360-chatbot
           path: chatbot
@@ -74,7 +77,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
         
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v2
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -111,7 +114,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             
       - name: Build and push backend image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v4
         with:
           context: ./backend
           push: true
@@ -121,7 +124,7 @@ jobs:
           cache-to: type=gha,mode=max
           
       - name: Build and push frontend image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v4
         with:
           context: ./frontend
           push: true
@@ -131,7 +134,7 @@ jobs:
           cache-to: type=gha,mode=max
           
       - name: Build and push chatbot image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v4
         with:
           context: ./chatbot
           push: true
@@ -141,7 +144,7 @@ jobs:
           cache-to: type=gha,mode=max
           
       - name: Set up kubectl
-        uses: azure/setup-kubectl@v4
+        uses: azure/setup-kubectl@v3
         with:
           version: 'latest'
           
@@ -150,6 +153,9 @@ jobs:
           mkdir -p $HOME/.kube
           echo "${{ secrets.KUBE_CONFIG_PROD }}" | base64 -d > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
+          # Verify connection
+          kubectl version --client
+          kubectl cluster-info
           
       - name: Create Kubernetes namespace
         run: |
@@ -178,9 +184,19 @@ jobs:
           
       - name: Wait for rollout to complete
         run: |
-          kubectl rollout status deployment/backend-deployment --namespace=autocare360 --timeout=5m
-          kubectl rollout status deployment/frontend-deployment --namespace=autocare360 --timeout=5m
-          kubectl rollout status deployment/chatbot-deployment --namespace=autocare360 --timeout=5m
+          echo "Waiting for deployments to complete..."
+          kubectl rollout status deployment/backend-deployment --namespace=${{ env.KUBE_NAMESPACE }} --timeout=${{ env.DEPLOYMENT_TIMEOUT }}
+          kubectl rollout status deployment/frontend-deployment --namespace=${{ env.KUBE_NAMESPACE }} --timeout=${{ env.DEPLOYMENT_TIMEOUT }}
+          kubectl rollout status deployment/chatbot-deployment --namespace=${{ env.KUBE_NAMESPACE }} --timeout=${{ env.DEPLOYMENT_TIMEOUT }}
+          
+      - name: Verify deployment health
+        run: |
+          echo "=== Checking deployment health ==="
+          # Wait for pods to be ready
+          kubectl wait --for=condition=ready pod --all --namespace=${{ env.KUBE_NAMESPACE }} --timeout=300s
+          
+          # Check if all deployments have desired replicas
+          kubectl get deployments --namespace=${{ env.KUBE_NAMESPACE }} -o wide
           
       - name: Verify deployment
         run: |
